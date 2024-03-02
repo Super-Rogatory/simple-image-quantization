@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <cmath>
+#include <numeric>
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -31,12 +32,14 @@ class MyApp : public wxApp {
  */
 class MyFrame : public wxFrame {
  public:
-  MyFrame(const wxString &title, string imagePath, int mode, int max_unique_colors);
+  MyFrame(const wxString &title, string imagePath, int mode, long long max_unique_colors);
   void Quant();
-  void performUniformQuantization(int max_unique_colors);
-  void uniformInitalization(int partitions); 
-  void uniformlyPopulateBuckets(int partitions); 
+  void performUniformQuantization();
+  void uniformInitalization(); 
   std::vector<unsigned char> uniformNewRGB(unsigned char r, unsigned char g, unsigned char b); 
+  void performNonUniformQuantization();
+  void nonUniformInitialization();
+  std::vector<unsigned char> nonUniformNewRGB(unsigned char r, unsigned char g, unsigned char b);
 
  private:
   void OnPaint(wxPaintEvent &event);
@@ -46,9 +49,20 @@ class MyFrame : public wxFrame {
   int width;
   int height;
   int mode;
-  int max_unique_colors;
-  std::vector<std::pair<int, int>> buckets;
+  int partitions;
+  long long max_unique_colors;
+  std::vector<std::pair<int, int>> buckets; // ranges
   std::vector<int> midpoints;
+  std::vector<std::pair<int, int>> red_buckets; // ranges
+  std::vector<std::pair<int, int>> green_buckets; // ranges
+  std::vector<std::pair<int, int>> blue_buckets; // ranges
+  std::vector<std::vector<int>> reds;
+  std::vector<std::vector<int>> greens;
+  std::vector<std::vector<int>> blues;
+  std::vector<int> red_averages;
+  std::vector<int> blue_averages;
+  std::vector<int> green_averages;
+  
 };
 
 /** Utility function to read image data */
@@ -79,24 +93,11 @@ std::vector<unsigned char> MyFrame::uniformNewRGB(unsigned char r, unsigned char
   return { n_r, n_g, n_b };
 }
 
-// sliding window (in a way) - oh wow, I guess leetcode isn't uselss afterall. . .
-void MyFrame::uniformlyPopulateBuckets(int partitions) {
-  // from 0 to 255.
-  // double loop 
-  const int MAX = 256; // for any 8 bit pixel, 256 unique values per channel
-  const int RANGE_SIZE = 256 / partitions;
-  int i = 0, j = 0;
-  while(i < MAX) {
-    j = i + RANGE_SIZE - 1;
-    buckets.push_back({ i, max(j, MAX - 1) });
-    i = j + 1;
-  }
-}
-
 
 
 // initializing buckets and midpoints for uniform quant
-void MyFrame::uniformInitalization(int partitions) {
+void MyFrame::uniformInitalization() {
+    // partitions - the number of buckets we should have for each color channel
     const int MAX = 256; // for any 8-bit pixel, 256 unique values per channel
     const int base_range_size = MAX / partitions;
     int leftovers = MAX % partitions; // calculate leftover values to distribute
@@ -109,13 +110,13 @@ void MyFrame::uniformInitalization(int partitions) {
         buckets.push_back({i, j});
         midpoints.push_back(round((j + i) / 2.0f));
         i = j + 1;
-        --leftovers;
+        if(leftovers > 0) --leftovers;
     }
 }
 
-void MyFrame::performUniformQuantization(int max_unique_colors) {
+void MyFrame::performUniformQuantization() {
   // could I use instead int* buckets? so each element points to an int array? Are there speed improvements using a raw array?
-  uniformInitalization(std::pow(max_unique_colors, 1/3.0)); // root3(B)
+  uniformInitalization(); // root3(B)
   // now we have bucket and midpoint information, we can perform quants on each color. let's gooooo.
   std::vector<unsigned char> newRGB;
   int index;
@@ -130,14 +131,133 @@ void MyFrame::performUniformQuantization(int max_unique_colors) {
   }
 }
 
+
+std::vector<unsigned char> MyFrame::nonUniformNewRGB(unsigned char r, unsigned char g, unsigned char b) {
+  unsigned char n_r = 0, n_g = 0, n_b = 0;
+  std::size_t count = 0;
+  // all buckets should be of the same size
+  for(int i = 0; i < red_buckets.size(); ++i) {
+    if(r >= red_buckets[i].first && r <= red_buckets[i].second) {
+      n_r = red_averages[i];
+      ++count;
+    }
+    if(g >= green_buckets[i].first && g <= green_buckets[i].second) {
+      n_g = green_averages[i];
+      ++count;
+    }
+    if(b >= blue_buckets[i].first && b <= blue_buckets[i].second) {
+      n_b = blue_averages[i];      
+      ++count;
+    }
+
+    if(count == 3)
+      break;    
+  }
+  return { n_r, n_g, n_b };
+}
+
+/* OSSTTREEAAAMMMM */
+// Overload the stream insertion operator for std::pair<int, int>
+std::ostream& operator<<(std::ostream& os, const std::pair<int, int>& p) {
+    os << "[" << p.first << ", " << p.second << "]";
+    return os;
+}
+
+// Overload the stream insertion operator for std::vector<std::pair<int, int>>
+std::ostream& operator<<(std::ostream& os, const std::vector<std::pair<int, int>>& v) {
+    os << "{ ";
+    for (const auto& pair : v) {
+        os << pair << " ";
+    }
+    os << "}";
+    return os;
+}
+
+// Overload the stream insertion operator for std::vector<std::pair<int, int>>
+std::ostream& operator<<(std::ostream& os, const std::vector<int> & v) {
+    os << "{ ";
+    for (const auto& elem : v) {
+        os << elem << " ";
+    }
+    os << "}";
+    return os;
+}
+/* OSSTTREEAAAMMMM */
+
+void MyFrame::nonUniformInitialization() {
+  // partitions - the number of buckets we should have for each color channel
+  const int TOTAL_PIXEL_COUNT = width * height; // we get the total pixel count
+  const int base_range_size = TOTAL_PIXEL_COUNT / partitions;  // each partition should have a uniform # of pixels!
+  int leftovers = TOTAL_PIXEL_COUNT % partitions; // calculate leftover values to distribute
+  std::vector<int> reds_values;
+  std::vector<int> greens_values;
+  std::vector<int> blues_values;
+  std::cout << partitions << std::endl;
+  int index = 0;
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+        index = (y * width + x) * 3;
+        reds_values.push_back(inData[index]);
+        greens_values.push_back(inData[index + 1]);
+        blues_values.push_back(inData[index + 2]);
+    }
+  }
+
+  // let us examine the frequencys of pixel values
+  std::sort(reds_values.begin(), reds_values.end());
+  std::sort(greens_values.begin(), greens_values.end());
+  std::sort(blues_values.begin(), blues_values.end());
+  // now let us partition the proper number of pixels
+  // ie.) [1,1,1,1,1,2,3,3,4,4,5,5,5,5,5,5,6,6,7,8,9] - reds (approx 21 vals), 4 partitions leftover = 1
+  std::vector<int> red_range, green_range, blue_range;
+  int range_index = 0, range_size = 0;
+  for(int part = 0; part < partitions; ++part) {
+    range_size = base_range_size + (leftovers > 0 ? 1 : 0);
+    // yields range subvector
+    red_range = std::vector<int>(reds_values.begin() + range_index, reds_values.begin() + range_index + range_size);
+    green_range = std::vector<int>(greens_values.begin() + range_index, greens_values.begin() + range_index + range_size);
+    blue_range = std::vector<int>(blues_values.begin() + range_index, blues_values.begin() + range_index + range_size);
+    // pushes low and highest value in range (since sorted)
+    red_buckets.push_back({red_range.front(), red_range.back()});
+    green_buckets.push_back({green_range.front(), green_range.back()});
+    blue_buckets.push_back({blue_range.front(), blue_range.back()});
+    // places average of each range
+    red_averages.push_back(std::round(std::accumulate(red_range.begin(), red_range.end(), 0) / static_cast<float>(red_range.size())));
+    green_averages.push_back(std::round(std::accumulate(green_range.begin(), green_range.end(), 0) / static_cast<float>(green_range.size())));
+    blue_averages.push_back(std::round(std::accumulate(blue_range.begin(), blue_range.end(), 0) / static_cast<float>(blue_range.size())));
+
+    range_index += range_size;
+    if(leftovers > 0) --leftovers;
+  }
+}
+
+void MyFrame::performNonUniformQuantization() {
+  // pseudocode
+  // 8-bit image: can have 256 unique colors each channel
+  // now I have the frequencies for each color seperated into their respective buckets, along with their averages
+  nonUniformInitialization();
+  std::vector<unsigned char> newRGB;
+  int index;
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+        index = (y * width + x) * 3;
+        newRGB = nonUniformNewRGB(inData[index], inData[index + 1], inData[index + 2]);
+        inData[index] = newRGB[0];
+        inData[index + 1] = newRGB[1];
+        inData[index + 2] = newRGB[2];
+    }
+  }  
+}
+
 void MyFrame::Quant() {
   // using this so it's clear where the data is coming from
+  partitions = static_cast<int>(std::round(std::pow(max_unique_colors, 1/3.0)));
   switch(this->mode) {
     case 1:
-      performUniformQuantization(this->max_unique_colors);
+      performUniformQuantization();
       break;
     case 2:
-      // performNonUniformQuantization(this->inData, this->max_unique_colors);
+      performNonUniformQuantization();
       break;
     default:
       break;
@@ -167,7 +287,7 @@ bool MyApp::OnInit() {
 
   string imagePath = wxApp::argv[1].ToStdString();
   int mode = std::stoi(wxApp::argv[2].ToStdString());
-  int max_unique_colors = std::stoi(wxApp::argv[3].ToStdString());
+  long long max_unique_colors = std::stoll(wxApp::argv[3].ToStdString()); // TODO: INCREASE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
   MyFrame *frame = new MyFrame("Image Display", imagePath, mode, max_unique_colors);
   frame->Quant();
@@ -181,7 +301,7 @@ bool MyApp::OnInit() {
  * Constructor for the MyFrame class.
  * Here we read the pixel data from the file and set up the scrollable window.
  */
-MyFrame::MyFrame(const wxString &title, string imagePath, int mode, int max_unique_colors)
+MyFrame::MyFrame(const wxString &title, string imagePath, int mode, long long max_unique_colors)
     : wxFrame(NULL, wxID_ANY, title), mode(mode), max_unique_colors(max_unique_colors) {
 
   // Modify the height and width values here to read and display an image with
