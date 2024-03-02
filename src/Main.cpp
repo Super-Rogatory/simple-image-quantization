@@ -26,6 +26,34 @@ class MyApp : public wxApp {
   bool OnInit() override;
 };
 
+/* OSSTTREEAAAMMMM */
+// Overload the stream insertion operator for std::pair<int, int>
+std::ostream& operator<<(std::ostream& os, const std::pair<int, int>& p) {
+    os << "[" << p.first << ", " << p.second << "]";
+    return os;
+}
+
+// Overload the stream insertion operator for std::vector<std::pair<int, int>>
+std::ostream& operator<<(std::ostream& os, const std::vector<std::pair<int, int>>& v) {
+    os << "{ ";
+    for (const auto& pair : v) {
+        os << pair << " ";
+    }
+    os << "}";
+    return os;
+}
+
+// Overload the stream insertion operator for std::vector<std::pair<int, int>>
+std::ostream& operator<<(std::ostream& os, const std::vector<int> & v) {
+    os << "{ ";
+    for (const auto& elem : v) {
+        os << elem << " ";
+    }
+    os << "}";
+    return os;
+}
+/* OSSTTREEAAAMMMM */
+
 /**
  * Class that implements wxFrame.
  * This frame serves as the top level window for the program
@@ -135,64 +163,41 @@ void MyFrame::performUniformQuantization() {
 std::vector<unsigned char> MyFrame::nonUniformNewRGB(unsigned char r, unsigned char g, unsigned char b) {
   unsigned char n_r = 0, n_g = 0, n_b = 0;
   std::size_t count = 0;
-  // all buckets should be of the same size
+  bool is_last = false;
+  // all buckets should be of the same size, ensuring exclusive boundary conditions unless it is the last bucket range.
+  // functions similarly to uniform quantization.
   for(int i = 0; i < red_buckets.size(); ++i) {
-    if(r >= red_buckets[i].first && r <= red_buckets[i].second) {
+    is_last = (i == red_buckets.size() - 1);
+    if ((r >= red_buckets[i].first && r < red_buckets[i].second) ||
+        (is_last && r == red_buckets[i].second)) {
       n_r = red_averages[i];
       ++count;
     }
-    if(g >= green_buckets[i].first && g <= green_buckets[i].second) {
-      n_g = green_averages[i];
-      ++count;
+    if ((g >= green_buckets[i].first && g < green_buckets[i].second) ||
+        (is_last && g == green_buckets[i].second)) {
+        n_g = green_averages[i];
+        ++count;
     }
-    if(b >= blue_buckets[i].first && b <= blue_buckets[i].second) {
-      n_b = blue_averages[i];      
-      ++count;
+    if ((b >= blue_buckets[i].first && b < blue_buckets[i].second) ||
+        (is_last && b == blue_buckets[i].second)) {
+        n_b = blue_averages[i];
+        ++count;
     }
-
     if(count == 3)
       break;    
   }
   return { n_r, n_g, n_b };
 }
 
-/* OSSTTREEAAAMMMM */
-// Overload the stream insertion operator for std::pair<int, int>
-std::ostream& operator<<(std::ostream& os, const std::pair<int, int>& p) {
-    os << "[" << p.first << ", " << p.second << "]";
-    return os;
-}
-
-// Overload the stream insertion operator for std::vector<std::pair<int, int>>
-std::ostream& operator<<(std::ostream& os, const std::vector<std::pair<int, int>>& v) {
-    os << "{ ";
-    for (const auto& pair : v) {
-        os << pair << " ";
-    }
-    os << "}";
-    return os;
-}
-
-// Overload the stream insertion operator for std::vector<std::pair<int, int>>
-std::ostream& operator<<(std::ostream& os, const std::vector<int> & v) {
-    os << "{ ";
-    for (const auto& elem : v) {
-        os << elem << " ";
-    }
-    os << "}";
-    return os;
-}
-/* OSSTTREEAAAMMMM */
 
 void MyFrame::nonUniformInitialization() {
   // partitions - the number of buckets we should have for each color channel
   const int TOTAL_PIXEL_COUNT = width * height; // we get the total pixel count
   const int base_range_size = TOTAL_PIXEL_COUNT / partitions;  // each partition should have a uniform # of pixels!
   int leftovers = TOTAL_PIXEL_COUNT % partitions; // calculate leftover values to distribute
-  std::vector<int> reds_values;
-  std::vector<int> greens_values;
-  std::vector<int> blues_values;
-  std::cout << partitions << std::endl;
+  std::vector<unsigned char> reds_values;
+  std::vector<unsigned char> greens_values;
+  std::vector<unsigned char> blues_values;
   int index = 0;
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
@@ -209,22 +214,28 @@ void MyFrame::nonUniformInitialization() {
   std::sort(blues_values.begin(), blues_values.end());
   // now let us partition the proper number of pixels
   // ie.) [1,1,1,1,1,2,3,3,4,4,5,5,5,5,5,5,6,6,7,8,9] - reds (approx 21 vals), 4 partitions leftover = 1
-  std::vector<int> red_range, green_range, blue_range;
+  std::vector<unsigned char> red_range, green_range, blue_range;
   int range_index = 0, range_size = 0;
   for(int part = 0; part < partitions; ++part) {
     range_size = base_range_size + (leftovers > 0 ? 1 : 0);
     // yields range subvector
-    red_range = std::vector<int>(reds_values.begin() + range_index, reds_values.begin() + range_index + range_size);
-    green_range = std::vector<int>(greens_values.begin() + range_index, greens_values.begin() + range_index + range_size);
-    blue_range = std::vector<int>(blues_values.begin() + range_index, blues_values.begin() + range_index + range_size);
+    red_range = std::vector<unsigned char>(reds_values.begin() + range_index, reds_values.begin() + min(range_index + range_size, static_cast<int>(reds_values.size())));
+    green_range = std::vector<unsigned char>(greens_values.begin() + range_index, greens_values.begin() + min(range_index + range_size, static_cast<int>(greens_values.size())));
+    blue_range = std::vector<unsigned char>(blues_values.begin() + range_index, blues_values.begin() + min(range_index + range_size, static_cast<int>(blues_values.size())));
     // pushes low and highest value in range (since sorted)
     red_buckets.push_back({red_range.front(), red_range.back()});
     green_buckets.push_back({green_range.front(), green_range.back()});
     blue_buckets.push_back({blue_range.front(), blue_range.back()});
     // places average of each range
-    red_averages.push_back(std::round(std::accumulate(red_range.begin(), red_range.end(), 0) / static_cast<float>(red_range.size())));
-    green_averages.push_back(std::round(std::accumulate(green_range.begin(), green_range.end(), 0) / static_cast<float>(green_range.size())));
-    blue_averages.push_back(std::round(std::accumulate(blue_range.begin(), blue_range.end(), 0) / static_cast<float>(blue_range.size())));
+    red_averages.push_back(static_cast<unsigned char>(std::round(
+        std::accumulate(red_range.begin(), red_range.end(), 0L) / static_cast<float>(red_range.size())
+    )));
+    green_averages.push_back(static_cast<unsigned char>(std::round(
+        std::accumulate(green_range.begin(), green_range.end(), 0L) / static_cast<float>(green_range.size())
+    )));
+    blue_averages.push_back(static_cast<unsigned char>(std::round(
+        std::accumulate(blue_range.begin(), blue_range.end(), 0L) / static_cast<float>(blue_range.size())
+    )));    
 
     range_index += range_size;
     if(leftovers > 0) --leftovers;
