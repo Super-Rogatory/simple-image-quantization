@@ -296,8 +296,6 @@ void MyFrame::displayError() {
 bool MyApp::OnInit() {
   wxInitAllImageHandlers();
 
-  // deal with command line arguments here
-  cout << "Number of command line arguments: " << wxApp::argc << endl;
   bool viewImage = true;
   if (wxApp::argc != 4 && wxApp::argc != 5) {
     cerr << "The executable should be invoked with exactly one filepath "
@@ -309,13 +307,14 @@ bool MyApp::OnInit() {
     std::string debugArgument = wxApp::argv[4].ToStdString();
     if(debugArgument == "n" || debugArgument == "N")
       viewImage = false;
+  } else {
+    cout << "Number of command line arguments: " << wxApp::argc << endl;
+    cout << "First argument: " << wxApp::argv[0] << endl;
+    cout << "Second argument: " << wxApp::argv[1] << endl;
+    cout << "Q: " << wxApp::argv[2] << endl;
+    cout << "B: " << wxApp::argv[3] << endl;
   }
-  cout << "First argument: " << wxApp::argv[0] << endl;
-  cout << "Second argument: " << wxApp::argv[1] << endl;
-  cout << "Q: " << wxApp::argv[2] << endl;
-  cout << "B: " << wxApp::argv[3] << endl;
-  if(!viewImage)
-    cout << "View Image Mode Off" << endl;
+
   string imagePath = wxApp::argv[1].ToStdString();
   int mode = std::stoi(wxApp::argv[2].ToStdString());
   long long max_unique_colors =
@@ -327,7 +326,7 @@ bool MyApp::OnInit() {
   // calculate the total errors for each bucket size
   frame->displayError();
   // return true to continue, false to exit the application
-  return true;
+  return frame->getViewMode();
 }
 
 /**
