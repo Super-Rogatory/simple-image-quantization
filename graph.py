@@ -19,30 +19,42 @@ def run_program(parameters):
 def run_program_wrapper(args):
     mode, b = args
     output = run_program(['Lena_512_512.rgb', mode, str(b**3)])
-    return {'B': b, 'Error': output, 'Mode': mode}
+    return {'Buckets': b, 'Error': output}  # Removed 'Mode'
 
-# Use ThreadPoolExecutor to run tasks in parallel
-results = []
-with ThreadPoolExecutor(max_workers=4) as executor:  # Adjust max_workers based on your machine
-    # Prepare arguments for both modes for each 'b' value
-    all_args = [(mode, b) for b in range(2, 257) for mode in ['1', '2']]
-    # Schedule the execution of run_program for each set of parameters
-    future_to_params = {executor.submit(run_program_wrapper, args): args for args in all_args}
+# Still using ThreadPoolExecutor to run tasks in parallel
+results_mode_1 = []
+results_mode_2 = []
+with ThreadPoolExecutor(max_workers=4) as executor:
+    # Separate argument preparation for each mode
+    all_args_mode_1 = [('1', b) for b in range(2, 257)]
+    all_args_mode_2 = [('2', b) for b in range(2, 257)]
     
-    for future in as_completed(future_to_params):
+    # Schedule the execution for Mode 1
+    futures_mode_1 = {executor.submit(run_program_wrapper, args): args for args in all_args_mode_1}
+    for future in as_completed(futures_mode_1):
         res = future.result()
-        results.append(res)
+        results_mode_1.append(res)
+    
+    # Schedule the execution for Mode 2
+    futures_mode_2 = {executor.submit(run_program_wrapper, args): args for args in all_args_mode_2}
+    for future in as_completed(futures_mode_2):
+        res = future.result()
+        results_mode_2.append(res)
 
-# Separate results based on mode
-err_mode_1 = [r for r in results if r['Mode'] == '1']
-err_mode_2 = [r for r in results if r['Mode'] == '2']
 
-# Write results to CSV
-with open('results.csv', 'w', newline='') as csvfile:
-    fieldnames = ['B', 'Error', 'Mode']
+with open('results_mode_1.csv', 'w', newline='') as csvfile:
+    fieldnames = ['Buckets', 'Error']
     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
     writer.writeheader()
-    for row in results:  # Directly write combined results
-        writer.writerow(row)
+    for row in results_mode_1:  # Directly use results_mode_1
+        writer.writerow({'Buckets': row['Buckets'], 'Error': row['Error']})
 
+# Write results for Mode 2 to its own CSV
+with open('results_mode_2.csv', 'w', newline='') as csvfile:
+    fieldnames = ['Buckets', 'Error']
+    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+    writer.writeheader()
+    for row in results_mode_2:  # Directly use results_mode_2
+        writer.writerow({'Buckets': row['Buckets'], 'Error': row['Error']})
