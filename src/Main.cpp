@@ -27,30 +27,6 @@ class MyApp : public wxApp {
   bool OnInit() override;
 };
 
-/* OSSTTREEAAAMMMM */
-// Overload the stream insertion operator for std::pair<int, int>
-std::ostream& operator<<(std::ostream& os, const std::pair<int, int>& p) {
-  os << "[" << p.first << ", " << p.second << "]";
-  return os;
-}
-
-// Overload the stream insertion operator for std::vector<std::pair<int, int>>
-std::ostream& operator<<(std::ostream& os, const std::vector<std::pair<int, int>>& v) {
-  os << "{ ";
-  for (const auto& pair : v) { os << pair << " "; }
-  os << "}";
-  return os;
-}
-
-// Overload the stream insertion operator for std::vector<std::pair<int, int>>
-std::ostream& operator<<(std::ostream& os, const std::vector<int>& v) {
-  os << "{ ";
-  for (const auto& elem : v) { os << elem << " "; }
-  os << "}";
-  return os;
-}
-/* OSSTTREEAAAMMMM */
-
 /**
  * Class that implements wxFrame.
  * This frame serves as the top level window for the program
